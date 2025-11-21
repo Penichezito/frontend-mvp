@@ -5,7 +5,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
 const api = axios.create({
     baseURL: API_URL,
     headers: {
-        "Content-Type": "application/json",   
+        "Content-Type": "application/json",
     },
 });
 
@@ -13,7 +13,7 @@ const api = axios.create({
 api.interceptors.request.use((config) => {
     const token = typeof window !== 'undefined' ? window.localStorage.getItem('token') : null;
     if (token) {
-        config.headers.Authorization = `Bearear ${token}`;
+        config.headers.Authorization = `Bearer ${token}`;
     }
     return config;
 });
@@ -25,7 +25,7 @@ export const login = async (email: string, password: string) => {
 }
 
 export const register = async (name: string, email: string, password: string) => {
-    const response = await api. post("/auth/register", { name, email, password });
+    const response = await api.post("/auth/register", { name, email, password });
     return response.data;
 }
 

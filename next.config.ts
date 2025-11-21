@@ -5,6 +5,7 @@ const nextConfig: NextConfig = {
   images: {
     domains: ["localhost"],
   },
+  output: "standalone",
   async rewrites() {
     return [
       {
