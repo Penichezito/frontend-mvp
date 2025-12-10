@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { Upload, FolderOpen, Tag, Search, User, LogOut, Home as HomeIcon, Files, Settings, Plus } from 'lucide-react';
+import { Upload, FolderOpen, Tag, Search, User, LogOut, Home as HomeIcon, Files, Settings, Plus, CheckCircle, XCircle, X } from 'lucide-react';
 import * as api from '@/services/api';
 
 interface Project {
@@ -22,6 +22,12 @@ interface FileItem {
   created_at: string;
 }
 
+interface Toast {
+  id: number;
+  message: string;
+  type: 'success' | 'error';
+}
+
 export default function Home() {
   const [currentView, setCurrentView] = useState('dashboard');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -31,6 +37,9 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showProjectModal, setShowProjectModal] = useState(false);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [toasts, setToasts] = useState<Toast[]>([]);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -40,6 +49,18 @@ export default function Home() {
       loadFiles();
     }
   }, []);
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    const id = Date.now();
+    setToasts(prev => [...prev, { id, message, type }]);
+    setTimeout(() => {
+      setToasts(prev => prev.filter(t => t.id !== id));
+    }, 4000);
+  };
+
+  const removeToast = (id: number) => {
+    setToasts(prev => prev.filter(t => t.id !== id));
+  };
 
   const loadProjects = async () => {
     try {
@@ -68,22 +89,22 @@ export default function Home() {
       await loadProjects();
       await loadFiles();
     } catch (error) {
-      alert('Erro ao fazer login');
+      showToast('Erro ao fazer login. Verifique suas credenciais.', 'error');
     } finally {
       setLoading(false);
     }
   };
 
-  const handleRegister = async (name: string, email: string, password: string) => {
+  const handleRegister = async (name: string, email: string, password: string, setIsRegister: (value: boolean) => void) => {
     try {
       setLoading(true);
-      const data = await api.register(name, email, password);
-      localStorage.setItem('token', data.access_token);
-      setIsLoggedIn(true);
-      await loadProjects();
-      await loadFiles();
-    } catch (error) {
-      alert('Erro ao criar conta');
+      await api.register(name, email, password);
+      // Não faz login automático - usuário deve fazer login manualmente
+      showToast('Conta criada com sucesso! Faça login para continuar.', 'success');
+      setIsRegister(false); // Volta para tela de login
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || 'Erro ao criar conta';
+      showToast(errorMessage, 'error');
     } finally {
       setLoading(false);
     }
@@ -96,31 +117,56 @@ export default function Home() {
     setFiles([]);
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>, projectId: number) => {
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (file) {
+      setSelectedFile(file);
+    }
+  };
+
+  const handleUploadConfirm = async () => {
+    if (!selectedProjectId) {
+      showToast('Por favor, selecione um projeto', 'error');
+      return;
+    }
+    if (!selectedFile) {
+      showToast('Por favor, selecione um arquivo', 'error');
+      return;
+    }
 
     try {
       setLoading(true);
-      await api.uploadFiles(projectId, file);
+      await api.uploadFiles(selectedProjectId, selectedFile);
       await loadFiles();
       setShowUploadModal(false);
-      alert('Arquivo enviado com sucesso!');
-    } catch (error) {
-      alert('Erro ao enviar arquivo');
+      setSelectedProjectId(null);
+      setSelectedFile(null);
+      showToast('Arquivo enviado com sucesso!', 'success');
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || 'Erro ao enviar arquivo';
+      showToast(errorMessage, 'error');
+      console.error('Erro detalhado:', error);
     } finally {
       setLoading(false);
     }
   };
 
   const handleCreateProject = async (name: string, clientName: string) => {
+    if (!name || !clientName) {
+      showToast('Por favor, preencha todos os campos', 'error');
+      return;
+    }
+
     try {
       setLoading(true);
       await api.createProject({ name, client_name: clientName });
       await loadProjects();
       setShowProjectModal(false);
-    } catch (error) {
-      alert('Erro ao criar projeto');
+      showToast('Projeto criado com sucesso!', 'success');
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || 'Erro ao criar projeto';
+      showToast(errorMessage, 'error');
+      console.error('Erro detalhado:', error);
     } finally {
       setLoading(false);
     }
@@ -132,7 +178,7 @@ export default function Home() {
 
     const handleSubmit = () => {
       if (isRegister) {
-        handleRegister(formData.name, formData.email, formData.password);
+        handleRegister(formData.name, formData.email, formData.password, setIsRegister);
       } else {
         handleLogin(formData.email, formData.password);
       }
@@ -434,7 +480,11 @@ export default function Home() {
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
             <h3 className="text-xl font-bold mb-4">Upload de Arquivo</h3>
-            <select className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-4">
+            <select 
+              value={selectedProjectId || ''}
+              onChange={(e) => setSelectedProjectId(e.target.value ? parseInt(e.target.value) : null)}
+              className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-4"
+            >
               <option value="">Selecione um projeto</option>
               {projects.map(p => (
                 <option key={p.id} value={p.id}>{p.name}</option>
@@ -442,20 +492,31 @@ export default function Home() {
             </select>
             <input
               type="file"
-              onChange={(e) => {
-                const select = document.querySelector('select') as HTMLSelectElement;
-                if (select.value) {
-                  handleFileUpload(e, parseInt(select.value));
-                }
-              }}
-              className="w-full mb-4"
+              onChange={handleFileSelect}
+              className="w-full mb-2"
             />
-            <button
-              onClick={() => setShowUploadModal(false)}
-              className="w-full bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300"
-            >
-              Cancelar
-            </button>
+            {selectedFile && (
+              <p className="text-sm text-gray-600 mb-4">Arquivo selecionado: {selectedFile.name}</p>
+            )}
+            <div className="flex gap-3">
+              <button
+                onClick={handleUploadConfirm}
+                disabled={loading || !selectedFile || !selectedProjectId}
+                className="flex-1 bg-indigo-600 text-white py-2 rounded-lg hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {loading ? 'Enviando...' : 'Upload'}
+              </button>
+              <button
+                onClick={() => {
+                  setShowUploadModal(false);
+                  setSelectedProjectId(null);
+                  setSelectedFile(null);
+                }}
+                className="flex-1 bg-gray-200 text-gray-800 py-2 rounded-lg hover:bg-gray-300"
+              >
+                Cancelar
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -497,6 +558,49 @@ export default function Home() {
           </div>
         </div>
       )}
+
+      {/* Toast Notifications */}
+      <div className="fixed top-4 right-4 z-50 space-y-2">
+        {toasts.map(toast => (
+          <div
+            key={toast.id}
+            className={`flex items-center gap-3 px-4 py-3 rounded-lg shadow-lg transform transition-all duration-300 animate-slide-in ${
+              toast.type === 'success' 
+                ? 'bg-green-500 text-white' 
+                : 'bg-red-500 text-white'
+            }`}
+            style={{
+              animation: 'slideIn 0.3s ease-out'
+            }}
+          >
+            {toast.type === 'success' ? (
+              <CheckCircle className="w-5 h-5" />
+            ) : (
+              <XCircle className="w-5 h-5" />
+            )}
+            <p className="flex-1 font-medium">{toast.message}</p>
+            <button
+              onClick={() => removeToast(toast.id)}
+              className="hover:bg-white/20 rounded p-1 transition-colors"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <style jsx>{`
+        @keyframes slideIn {
+          from {
+            transform: translateX(100%);
+            opacity: 0;
+          }
+          to {
+            transform: translateX(0);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 }
