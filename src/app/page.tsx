@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Upload, FolderOpen, Tag, Search, User, LogOut, Home as HomeIcon, Files, Settings, Plus, CheckCircle, XCircle, X } from 'lucide-react';
 import * as api from '@/services/api';
 
@@ -40,6 +40,7 @@ export default function Home() {
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
@@ -50,12 +51,22 @@ export default function Home() {
     }
   }, []);
 
+  // Auto-abre seletor de arquivo quando modal aparece
+  useEffect(() => {
+    if (showUploadModal && fileInputRef.current) {
+      // Pequeno delay para garantir que o modal renderizou
+      setTimeout(() => {
+        fileInputRef.current?.click();
+      }, 100);
+    }
+  }, [showUploadModal]);
+
   const showToast = (message: string, type: 'success' | 'error') => {
     const id = Date.now();
     setToasts(prev => [...prev, { id, message, type }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 4000);
+    }, 5000); // 5 segundos para dar tempo de ler
   };
 
   const removeToast = (id: number) => {
@@ -99,8 +110,8 @@ export default function Home() {
     try {
       setLoading(true);
       await api.register(name, email, password);
-      // Não faz login automático - usuário deve fazer login manualmente
-      showToast('Conta criada com sucesso! Faça login para continuar.', 'success');
+      // Mostra toast de sucesso e volta para tela de login
+      showToast('✅ Conta criada com sucesso! Faça login para continuar.', 'success');
       setIsRegister(false); // Volta para tela de login
     } catch (error: any) {
       const errorMessage = error?.response?.data?.detail || 'Erro ao criar conta';
@@ -172,11 +183,61 @@ export default function Home() {
     }
   };
 
+  const handleDeleteProject = async (id: number) => {
+    if (!confirm('Tem certeza que deseja excluir este projeto?')) return;
+    
+    try {
+      setLoading(true);
+      await api.deleteProject(id);
+      await loadProjects();
+      await loadFiles();
+      showToast('Projeto excluído com sucesso!', 'success');
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || 'Erro ao excluir projeto';
+      showToast(errorMessage, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleDeleteFile = async (id: number) => {
+    if (!confirm('Tem certeza que deseja excluir este arquivo?')) return;
+    
+    try {
+      setLoading(true);
+      await api.deleteFiles(id);
+      await loadFiles();
+      showToast('Arquivo excluído com sucesso!', 'success');
+    } catch (error: any) {
+      const errorMessage = error?.response?.data?.detail || 'Erro ao excluir arquivo';
+      showToast(errorMessage, 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleViewFile = (file: FileItem) => {
+    // Abre o arquivo em nova aba
+    const fileUrl = `http://localhost:8000/files/${file.id}/download`;
+    window.open(fileUrl, '_blank');
+  };
+
   const LoginView = () => {
     const [isRegister, setIsRegister] = useState(false);
     const [formData, setFormData] = useState({ name: '', email: '', password: '' });
 
     const handleSubmit = () => {
+      // Validação de campos vazios
+      if (!formData.email || !formData.password) {
+        showToast('Por favor, preencha email e senha', 'error');
+        return;
+      }
+      
+      if (isRegister && !formData.name) {
+        showToast('Por favor, preencha seu nome', 'error');
+        return;
+      }
+      
       if (isRegister) {
         handleRegister(formData.name, formData.email, formData.password, setIsRegister);
       } else {
@@ -308,10 +369,12 @@ export default function Home() {
             projects.map(project => (
               <div
                 key={project.id}
-                onClick={() => { setSelectedProject(project); setCurrentView('files'); loadFiles(project.id); }}
-                className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-indigo-50 cursor-pointer transition-colors border border-gray-200"
+                className="flex items-center justify-between p-4 bg-gray-50 rounded-lg hover:bg-indigo-50 transition-colors border border-gray-200"
               >
-                <div className="flex items-center gap-4">
+                <div 
+                  className="flex items-center gap-4 flex-1 cursor-pointer"
+                  onClick={() => { setSelectedProject(project); setCurrentView('files'); loadFiles(project.id); }}
+                >
                   <div className="w-12 h-12 bg-indigo-600 rounded-lg flex items-center justify-center">
                     <FolderOpen className="w-6 h-6 text-white" />
                   </div>
@@ -320,10 +383,20 @@ export default function Home() {
                     <p className="text-sm text-gray-600">{project.client_name}</p>
                   </div>
                 </div>
-                <div className="text-right">
+                <div className="flex items-center gap-3">
                   <p className="text-sm text-gray-600">
                     {files.filter(f => f.project_id === project.id).length} arquivos
                   </p>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDeleteProject(project.id);
+                    }}
+                    className="text-red-600 hover:text-red-700 p-2 hover:bg-red-50 rounded-lg transition-colors"
+                    title="Excluir projeto"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
                 </div>
               </div>
             ))
@@ -400,9 +473,21 @@ export default function Home() {
                   ))}
                 </div>
                 
-                <button className="w-full bg-indigo-50 text-indigo-600 py-2 rounded-lg hover:bg-indigo-100 transition-colors font-semibold">
-                  Visualizar
-                </button>
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => handleViewFile(file)}
+                    className="flex-1 bg-indigo-50 text-indigo-600 py-2 rounded-lg hover:bg-indigo-100 transition-colors font-semibold"
+                  >
+                    Visualizar
+                  </button>
+                  <button
+                    onClick={() => handleDeleteFile(file.id)}
+                    className="px-4 bg-red-50 text-red-600 py-2 rounded-lg hover:bg-red-100 transition-colors font-semibold"
+                    title="Excluir arquivo"
+                  >
+                    <X className="w-5 h-5" />
+                  </button>
+                </div>
               </div>
             ))
           )}
@@ -491,6 +576,7 @@ export default function Home() {
               ))}
             </select>
             <input
+              ref={fileInputRef}
               type="file"
               onChange={handleFileSelect}
               className="w-full mb-2"
@@ -560,7 +646,7 @@ export default function Home() {
       )}
 
       {/* Toast Notifications */}
-      <div className="fixed top-4 right-4 z-50 space-y-2">
+      <div className="fixed top-4 right-4 z-50 space-y-2 max-w-md">
         {toasts.map(toast => (
           <div
             key={toast.id}
@@ -574,11 +660,11 @@ export default function Home() {
             }}
           >
             {toast.type === 'success' ? (
-              <CheckCircle className="w-5 h-5" />
+              <CheckCircle className="w-5 h-5 flex-shrink-0" />
             ) : (
-              <XCircle className="w-5 h-5" />
+              <XCircle className="w-5 h-5 flex-shrink-0" />
             )}
-            <p className="flex-1 font-medium">{toast.message}</p>
+            <p className="flex-1 font-medium text-sm break-words">{toast.message}</p>
             <button
               onClick={() => removeToast(toast.id)}
               className="hover:bg-white/20 rounded p-1 transition-colors"
@@ -589,7 +675,7 @@ export default function Home() {
         ))}
       </div>
 
-      <style jsx>{`
+      <style>{`
         @keyframes slideIn {
           from {
             transform: translateX(100%);

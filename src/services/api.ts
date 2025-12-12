@@ -18,9 +18,39 @@ api.interceptors.request.use((config) => {
     return config;
 });
 
+// Interceptor para tratar erros de autenticação (401)
+api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (error.response?.status === 401) {
+            // Token inválido ou expirado - limpa localStorage e recarrega página
+            // Mas só se realmente tinha um token (evita reload em loop na tela de login)
+            if (typeof window !== 'undefined') {
+                const hadToken = localStorage.getItem('token');
+                localStorage.removeItem('token');
+
+                // Só recarrega se tinha token antes (usuário estava logado)
+                if (hadToken) {
+                    window.location.reload();
+                }
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
 // Auth
 export const login = async (email: string, password: string) => {
-    const response = await api.post("/auth/login", { email, password });
+    // Backend usa OAuth2PasswordRequestForm que espera 'username' (não 'email')
+    const formData = new URLSearchParams();
+    formData.append('username', email);
+    formData.append('password', password);
+
+    const response = await api.post("/auth/login", formData, {
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+        },
+    });
     return response.data;
 }
 
@@ -40,8 +70,13 @@ export const createProject = async (data: { name: string, client_name: string, d
     return response.data;
 };
 
-export const getProjectId = async (id: number) => {
+export const getProject = async (id: number) => {
     const response = await api.get(`/projects/${id}`);
+    return response.data;
+};
+
+export const deleteProject = async (id: number) => {
+    const response = await api.delete(`/projects/${id}`);
     return response.data;
 };
 
