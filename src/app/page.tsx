@@ -45,9 +45,20 @@ export default function Home() {
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
-      setIsLoggedIn(true);
-      loadProjects();
-      loadFiles();
+      // Valida token tentando carregar dados
+      const validateAndLoad = async () => {
+        try {
+          setIsLoggedIn(true);
+          await loadProjects();
+          await loadFiles();
+        } catch (error) {
+          // Se falhar, token é inválido - remove e mantém na tela de login
+          console.error('Token inválido:', error);
+          localStorage.removeItem('token');
+          setIsLoggedIn(false);
+        }
+      };
+      validateAndLoad();
     }
   }, []);
 
@@ -562,10 +573,11 @@ export default function Home() {
       </div>
 
       {showUploadModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl p-6 w-full max-w-md">
             <h3 className="text-xl font-bold mb-4">Upload de Arquivo</h3>
-            <select 
+            
+            <select
               value={selectedProjectId || ''}
               onChange={(e) => setSelectedProjectId(e.target.value ? parseInt(e.target.value) : null)}
               className="w-full px-4 py-2 border border-gray-300 rounded-lg mb-4"
@@ -575,15 +587,50 @@ export default function Home() {
                 <option key={p.id} value={p.id}>{p.name}</option>
               ))}
             </select>
+
+            {/* Drag and Drop Zone */}
+            <div
+              onDragOver={(e) => {
+                e.preventDefault();
+                e.currentTarget.classList.add('border-indigo-500', 'bg-indigo-50');
+              }}
+              onDragLeave={(e) => {
+                e.currentTarget.classList.remove('border-indigo-500', 'bg-indigo-50');
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                e.currentTarget.classList.remove('border-indigo-500', 'bg-indigo-50');
+                const file = e.dataTransfer.files[0];
+                if (file) {
+                  setSelectedFile(file);
+                }
+              }}
+              className="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center mb-4 transition-colors cursor-pointer hover:border-indigo-400 hover:bg-gray-50"
+              onClick={() => fileInputRef.current?.click()}
+            >
+              <Upload className="w-12 h-12 mx-auto mb-3 text-gray-400" />
+              <p className="text-gray-600 mb-2 font-medium">
+                Arraste e solte seu arquivo aqui
+              </p>
+              <p className="text-sm text-gray-500 mb-3">ou</p>
+              <span className="inline-block bg-indigo-100 text-indigo-600 px-4 py-2 rounded-lg hover:bg-indigo-200 transition-colors font-semibold">
+                Clique para escolher
+              </span>
+            </div>
+
             <input
               ref={fileInputRef}
               type="file"
               onChange={handleFileSelect}
-              className="w-full mb-2"
+              className="hidden"
             />
+
             {selectedFile && (
-              <p className="text-sm text-gray-600 mb-4">Arquivo selecionado: {selectedFile.name}</p>
+              <p className="text-sm text-gray-600 mb-4 bg-gray-50 p-3 rounded-lg">
+                📄 Arquivo selecionado: <span className="font-semibold">{selectedFile.name}</span>
+              </p>
             )}
+
             <div className="flex gap-3">
               <button
                 onClick={handleUploadConfirm}
